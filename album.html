@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Figurinhas Copa 2026</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --green: #1a5632; --gold: #f0c040; --red: #d32f2f; --orange: #e67e22;
+  --yellow: #b8860b; --gray: #999; --bg: #f5f5f5; --card: #fff;
+  --text: #222; --muted: #666; --radius: 10px;
+  --none-bg: #ffebee; --none-border: #ef9a9a;
+  --a1-bg: #fff3e0; --a1-border: #ffcc80;
+  --a2-bg: #fffde7; --a2-border: #fff176;
+  --both-bg: #e8f5e9; --both-border: #a5d6a7;
+}
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+/* Top bar: header + toolbar stick together */
+.top-bar {
+  position: sticky; top: 0; z-index: 100;
+  box-shadow: 0 2px 8px rgba(0,0,0,.15);
+}
+header {
+  background: linear-gradient(135deg, #0d3319, var(--green));
+  color: #fff; padding: 10px 12px 8px;
+}
+header h1 { font-size: 1rem; text-align: center; margin-bottom: 6px; }
+header h1 span { color: var(--gold); }
+.stats-row { display: flex; gap: 4px; flex-wrap: wrap; justify-content: center; }
+.stat-pill {
+  background: rgba(255,255,255,.15); border-radius: 20px; padding: 3px 8px;
+  font-size: .68rem; white-space: nowrap; backdrop-filter: blur(4px);
+}
+.stat-pill b { font-size: .8rem; }
+
+/* Toolbar */
+.toolbar {
+  display: flex; gap: 5px; padding: 6px 10px; background: #fff;
+  border-bottom: 1px solid #ddd; flex-wrap: wrap;
+}
+.toolbar input {
+  flex: 1; min-width: 100px; border: 1px solid #ccc; border-radius: 8px;
+  padding: 8px 12px; font-size: .9rem; outline: none;
+}
+.toolbar input:focus { border-color: var(--green); }
+.toolbar button {
+  border: 1px solid #ccc; border-radius: 8px; padding: 8px 12px;
+  font-size: .8rem; font-weight: 600; cursor: pointer; background: #fff;
+  white-space: nowrap; display: flex; align-items: center; gap: 4px;
+  transition: all .15s;
+}
+.toolbar button:active { transform: scale(.96); }
+.btn-filter { color: var(--green); }
+.btn-filter.active { background: var(--green); color: #fff; border-color: var(--green); }
+.btn-copy { background: var(--gold); border-color: var(--gold); color: #333; }
+
+/* Sections */
+main { padding: 8px 8px 100px; }
+.section {
+  background: var(--card); border-radius: var(--radius); margin-bottom: 8px;
+  overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.08);
+}
+.section-header {
+  display: flex; align-items: center; gap: 8px; padding: 10px 12px;
+  cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent;
+  font-weight: 600; font-size: .9rem; border-bottom: 1px solid #eee;
+}
+.section-header:active { background: #f9f9f9; }
+.section-header .flag { font-size: 1.3rem; }
+.section-header .name { flex: 1; }
+.section-header .badge {
+  font-size: .7rem; padding: 2px 8px; border-radius: 12px; font-weight: 600;
+}
+.badge-danger { background: #ffebee; color: var(--red); }
+.badge-warn { background: #fff3e0; color: var(--orange); }
+.badge-ok { background: #e8f5e9; color: #2e7d32; }
+.section-header .arrow { transition: transform .2s; font-size: .7rem; color: #999; }
+.section-header.open .arrow { transform: rotate(180deg); }
+
+.section-body { display: none; }
+.section-body.open { display: block; }
+
+/* Sticker row */
+.sticker {
+  display: flex; align-items: center; gap: 8px; padding: 6px 12px;
+  border-bottom: 1px solid #f0f0f0; font-size: .85rem;
+  min-height: 42px;
+}
+.sticker:last-child { border-bottom: none; }
+.sticker .code { font-weight: 700; font-family: 'SF Mono', 'Menlo', monospace; min-width: 50px; font-size: .8rem; }
+.sticker .need { font-size: .7rem; font-weight: 700; min-width: 22px; text-align: center; }
+.need-2 { color: var(--red); }
+.need-1 { color: var(--orange); }
+.sticker .btns { display: flex; gap: 6px; margin-left: auto; }
+.sticker .btns button {
+  width: 38px; height: 34px; border-radius: 8px; border: 2px solid #ddd;
+  font-size: .65rem; font-weight: 700; cursor: pointer; background: #fff;
+  transition: all .12s; -webkit-tap-highlight-color: transparent;
+  display: flex; align-items: center; justify-content: center;
+}
+.sticker .btns button:active { transform: scale(.92); }
+.btn-a1 { min-width: 38px; }
+.btn-a2 { min-width: 38px; }
+.btn-a1.off { border-color: #ddd; background: #fafafa; color: #aaa; }
+.btn-a1.on { border-color: #4caf50; background: #e8f5e9; color: #2e7d32; }
+.btn-a2.off { border-color: #ddd; background: #fafafa; color: #aaa; }
+.btn-a2.on { border-color: #2196f3; background: #e3f2fd; color: #1565c0; }
+
+/* Footer */
+.empty-state { text-align: center; padding: 40px 20px; color: var(--muted); }
+.empty-state .icon { font-size: 3rem; margin-bottom: 10px; }
+.empty-state p { font-size: .9rem; line-height: 1.5; }
+
+/* Toast */
+.toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: #333; color: #fff; padding: 10px 20px; border-radius: 24px;
+  font-size: .85rem; z-index: 999; opacity: 0; transition: opacity .3s;
+  pointer-events: none; white-space: nowrap;
+}
+.toast.show { opacity: 1; }
+
+@media (min-width: 600px) {
+  main { max-width: 700px; margin: 0 auto; padding: 12px 16px 60px; }
+  .toolbar { justify-content: center; }
+  .stats-row { gap: 10px; }
+  .stat-pill { font-size: .78rem; padding: 5px 12px; }
+}
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+<header>
+  <h1>🏆 <span>Copa 2026</span> · Dois Álbuns</h1>
+  <div class="stats-row" id="stats"></div>
+</header>
+
+<div class="toolbar">
+  <input type="text" id="search" placeholder="🔍 Buscar figurinha..." autocomplete="off">
+  <button class="btn-filter active" data-filter="missing" id="btn-missing">❌ Faltando</button>
+  <button class="btn-filter" data-filter="all" id="btn-all">📋 Todas</button>
+  <button class="btn-copy" id="btn-copy">📋 Copiar</button>
+  <button class="btn-filter" id="btn-collapse">📂 Recolher</button>
+</div>
+</div><!-- .top-bar -->
+
+<main id="main"></main>
+
+<div style="text-align:center;padding:20px;">
+  <button id="btn-reset" style="border:none;background:none;color:#999;font-size:.75rem;cursor:pointer;text-decoration:underline;">↩ Resetar dados</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+// DATA: Complete album structure
+// ============================================================
+function r(prefix, n) { return Array.from({length: n}, (_, i) => prefix + (i + 1)); }
+
+const SECTIONS = [
+  ['🌟','Introdução', ['00'].concat(r('FWC',19))],
+  ['🇲🇽','México', r('MEX',20)],
+  ['🇿🇦','África do Sul', r('RSA',20)],
+  ['🇰🇷','Coreia do Sul', r('KOR',20)],
+  ['🇨🇿','República Tcheca', r('CZE',20)],
+  ['🇨🇦','Canadá', r('CAN',20)],
+  ['🇧🇦','Bósnia e Herzegovina', r('BIH',20)],
+  ['🇶🇦','Catar', r('QAT',20)],
+  ['🇨🇭','Suíça', r('SUI',20)],
+  ['🇧🇷','Brasil', r('BRA',20)],
+  ['🇲🇦','Marrocos', r('MAR',20)],
+  ['🇭🇹','Haiti', r('HAI',20)],
+  ['🏴󠁧󠁢󠁳󠁣󠁴󠁿','Escócia', r('SCO',20)],
+  ['🇺🇸','Estados Unidos', r('USA',20)],
+  ['🇵🇾','Paraguai', r('PAR',20)],
+  ['🇦🇺','Austrália', r('AUS',20)],
+  ['🇹🇷','Turquia', r('TUR',20)],
+  ['🇩🇪','Alemanha', r('GER',20)],
+  ['🇨🇼','Curaçao', r('CUW',20)],
+  ['🇨🇮','Costa do Marfim', r('CIV',20)],
+  ['🇪🇨','Equador', r('ECU',20)],
+  ['🇳🇱','Holanda', r('NED',20)],
+  ['🇯🇵','Japão', r('JPN',20)],
+  ['🇸🇪','Suécia', r('SWE',20)],
+  ['🇹🇳','Tunísia', r('TUN',20)],
+  ['🇧🇪','Bélgica', r('BEL',20)],
+  ['🇪🇬','Egito', r('EGY',20)],
+  ['🇮🇷','Irã', r('IRN',20)],
+  ['🇳🇿','Nova Zelândia', r('NZL',20)],
+  ['🇪🇸','Espanha', r('ESP',20)],
+  ['🇨🇻','Cabo Verde', r('CPV',20)],
+  ['🇸🇦','Arábia Saudita', r('KSA',20)],
+  ['🇺🇾','Uruguai', r('URU',20)],
+  ['🇫🇷','França', r('FRA',20)],
+  ['🇸🇳','Senegal', r('SEN',20)],
+  ['🇮🇶','Iraque', r('IRQ',20)],
+  ['🇳🇴','Noruega', r('NOR',20)],
+  ['🇦🇷','Argentina', r('ARG',20)],
+  ['🇩🇿','Argélia', r('ALG',20)],
+  ['🇦🇹','Áustria', r('AUT',20)],
+  ['🇯🇴','Jordânia', r('JOR',20)],
+  ['🇵🇹','Portugal', r('POR',20)],
+  ['🇨🇩','Congo RD', r('COD',20)],
+  ['🇺🇿','Uzbequistão', r('UZB',20)],
+  ['🇨🇴','Colômbia', r('COL',20)],
+  ['🏴󠁧󠁢󠁥󠁮󠁧󠁿','Inglaterra', r('ENG',20)],
+  ['🇭🇷','Croácia', r('CRO',20)],
+  ['🇬🇭','Gana', r('GHA',20)],
+  ['🇵🇦','Panamá', r('PAN',20)],
+  ['🥤','Coca-Cola', r('CC',13)],
+];
+
+// Build full sticker list
+const ALL_CODES = [];
+const CODE_SECTION = {}; // code -> section index
+SECTIONS.forEach((s, i) => {
+  s[2].forEach(c => { ALL_CODES.push(c); CODE_SECTION[c] = i; });
+});
+const TOTAL = ALL_CODES.length;
+
+// ============================================================
+// INITIAL STATE: Parse from user-provided data
+// ============================================================
+
+// Codes that ALBUM 1 DOES NOT HAVE (from "Faltam Álbum 1" list)
+const FALTAM_A1_RAW = `
+FWC1,FWC2,FWC3,FWC4,FWC5,FWC6,FWC7,FWC8,FWC9,FWC13,FWC14,FWC19
+MEX8,MEX12,MEX13,MEX20
+RSA1
+KOR4,KOR10,KOR11,KOR13,KOR15,KOR16,KOR19,KOR20
+CZE1,CZE2,CZE3,CZE5,CZE8,CZE9,CZE12,CZE13,CZE14,CZE15,CZE16,CZE17,CZE18,CZE19,CZE20
+CAN8,CAN12,CAN13
+BIH1,BIH2,BIH3,BIH4,BIH5,BIH7,BIH8,BIH12,BIH13,BIH14,BIH17,BIH18
+QAT2,QAT3,QAT4,QAT5
+SUI2,SUI4,SUI6,SUI11,SUI13,SUI16,SUI18,SUI19,SUI20
+BRA4,BRA13,BRA15
+MAR2,MAR8,MAR13
+HAI1,HAI5,HAI13,HAI19
+SCO16
+USA1,USA3,USA4,USA5,USA6,USA7,USA8,USA9,USA10,USA11,USA13,USA14,USA15,USA17,USA18,USA20
+PAR9,PAR19
+AUS9,AUS11,AUS13,AUS16,AUS18,AUS20
+TUR1,TUR2,TUR3,TUR4,TUR6,TUR7,TUR8,TUR9,TUR12,TUR13,TUR14,TUR15,TUR18,TUR19,TUR20
+GER1,GER8,GER12,GER13
+CUW1,CUW8,CUW9,CUW12,CUW13,CUW14,CUW17
+CIV13,CIV20
+ECU4,ECU5,ECU13,ECU18
+NED3,NED9,NED10,NED13,NED14,NED16
+JPN13,JPN19
+SWE1,SWE8,SWE11,SWE12,SWE16,SWE17,SWE18,SWE19,SWE20
+TUN4,TUN6,TUN8,TUN9,TUN11
+BEL3,BEL10,BEL13,BEL15,BEL19
+EGY3,EGY5,EGY13
+IRN2,IRN6,IRN13,IRN14
+NZL13
+ESP13
+CPV4,CPV5,CPV13,CPV14,CPV20
+KSA5
+URU2,URU3,URU4,URU5,URU8,URU9,URU11,URU13,URU20
+FRA12,FRA13
+SEN8,SEN18
+IRQ1,IRQ2,IRQ3,IRQ4,IRQ5,IRQ6,IRQ7,IRQ9,IRQ10,IRQ11,IRQ12,IRQ14,IRQ15,IRQ17,IRQ18
+NOR13
+ARG1
+ALG13
+AUT1,AUT3,AUT5,AUT8
+JOR13
+POR3,POR8,POR9,POR12,POR17,POR18
+COD1,COD2,COD3,COD4,COD7,COD10,COD11,COD13,COD14,COD15,COD16,COD17,COD18,COD19,COD20
+UZB1,UZB4,UZB5,UZB6,UZB9,UZB10,UZB11,UZB13,UZB15,UZB16
+COL5,COL13,COL16,COL19,COL20
+ENG13
+CRO6,CRO13,CRO19
+GHA9,GHA12,GHA13,GHA17,GHA18
+PAN2
+CC1,CC3,CC4,CC8,CC9,CC13
+`.replace(/\n/g,',').split(',').map(s => s.trim()).filter(Boolean);
+
+// Codes that ALBUM 2 HAS (from "Repetidas" list)
+const ALBUM2_HAS_RAW = `
+FWC10,FWC11,FWC12,FWC15,FWC16,FWC17
+MEX1,MEX2,MEX3,MEX4,MEX5,MEX6,MEX7,MEX9,MEX10,MEX11,MEX14,MEX15,MEX17,MEX19
+RSA3,RSA4,RSA5,RSA6,RSA7,RSA8,RSA9,RSA10,RSA11,RSA12,RSA14,RSA15,RSA16,RSA17,RSA19,RSA20
+KOR1,KOR2,KOR6,KOR8,KOR9,KOR12,KOR14,KOR17,KOR18
+CZE11
+CAN1,CAN2,CAN3,CAN5,CAN6,CAN7,CAN9,CAN10,CAN11,CAN14,CAN15,CAN17,CAN18,CAN19,CAN20
+BIH9,BIH10,BIH11,BIH16,BIH19
+QAT8,QAT9,QAT10,QAT11,QAT12,QAT14,QAT15,QAT16,QAT19,QAT20
+SUI1,SUI10,SUI14,SUI15
+BRA1,BRA3,BRA5,BRA7,BRA9,BRA10,BRA11,BRA12,BRA14,BRA16,BRA17,BRA18,BRA20
+MAR3,MAR5,MAR7,MAR9,MAR10,MAR11,MAR12,MAR14,MAR15,MAR16,MAR17,MAR18,MAR19,MAR20
+HAI3,HAI7,HAI8,HAI9,HAI10,HAI12,HAI14,HAI16,HAI17,HAI18,HAI20
+SCO1,SCO2,SCO3,SCO4,SCO5,SCO6,SCO7,SCO9,SCO10,SCO14,SCO15,SCO18,SCO19,SCO20
+PAR1,PAR2,PAR4,PAR5,PAR7,PAR8,PAR10,PAR11,PAR12,PAR13,PAR14,PAR15,PAR16,PAR17,PAR18,PAR20
+AUS2,AUS3,AUS4,AUS5,AUS6,AUS8,AUS10,AUS12,AUS15,AUS17,AUS19
+TUR5,TUR11,TUR16,TUR17
+GER5,GER6,GER7,GER9,GER10,GER11,GER15,GER16,GER18,GER19,GER20
+CUW2,CUW3,CUW4,CUW10,CUW11,CUW15,CUW16,CUW18,CUW19,CUW20
+CIV1,CIV2,CIV3,CIV4,CIV6,CIV7,CIV8,CIV10,CIV11,CIV12,CIV14,CIV15,CIV16,CIV17,CIV19
+ECU1,ECU2,ECU3,ECU6,ECU7,ECU10,ECU11,ECU14,ECU15,ECU16,ECU19,ECU20
+NED1,NED4,NED8,NED12,NED18,NED19,NED20
+JPN1,JPN4,JPN5,JPN7,JPN8,JPN9,JPN12,JPN14,JPN16,JPN17,JPN18
+SWE2,SWE4,SWE5,SWE6
+TUN1,TUN10,TUN12,TUN15,TUN16,TUN18
+BEL1,BEL4,BEL5,BEL8,BEL11,BEL12,BEL14,BEL16,BEL17,BEL18,BEL20
+EGY1,EGY6,EGY7,EGY8,EGY9,EGY10,EGY11,EGY12,EGY14,EGY16,EGY17,EGY18,EGY19,EGY20
+IRN1,IRN3,IRN4,IRN5,IRN7,IRN8,IRN9,IRN10,IRN11,IRN12,IRN15,IRN16,IRN17,IRN19,IRN20
+NZL1,NZL5,NZL6,NZL8,NZL9,NZL12,NZL14,NZL15,NZL17,NZL19,NZL20
+ESP1,ESP2,ESP3,ESP4,ESP5,ESP6,ESP7,ESP8,ESP9,ESP10,ESP11,ESP12,ESP14,ESP15,ESP16,ESP17,ESP18,ESP19,ESP20
+CPV1,CPV2,CPV3,CPV6,CPV7,CPV10,CPV11,CPV15,CPV17,CPV19
+KSA1,KSA2,KSA3,KSA6,KSA7,KSA9,KSA10,KSA11,KSA12,KSA13,KSA14,KSA15,KSA16,KSA17,KSA18,KSA19,KSA20
+URU1,URU10,URU12,URU14,URU15,URU16,URU17
+FRA2,FRA4,FRA5,FRA6,FRA8,FRA10,FRA11,FRA14,FRA15,FRA16,FRA19,FRA20
+SEN1,SEN2,SEN3,SEN5,SEN6,SEN7,SEN9,SEN11,SEN14,SEN17,SEN19,SEN20
+IRQ8
+NOR1,NOR3,NOR4,NOR5,NOR8,NOR10,NOR12,NOR15,NOR16,NOR17,NOR19,NOR20
+ARG3,ARG4,ARG5,ARG6,ARG7,ARG8,ARG9,ARG10,ARG11,ARG12,ARG15,ARG16,ARG17,ARG18,ARG19,ARG20
+ALG1,ALG2,ALG3,ALG5,ALG6,ALG7,ALG9,ALG10,ALG11,ALG14,ALG15,ALG16,ALG17,ALG18,ALG19,ALG20
+AUT2,AUT4,AUT6,AUT9,AUT10,AUT11,AUT13,AUT14,AUT15,AUT17
+JOR1,JOR2,JOR4,JOR5,JOR6,JOR7,JOR8,JOR9,JOR10,JOR14,JOR15,JOR16,JOR17,JOR18,JOR19,JOR20
+POR1,POR2,POR4,POR5,POR6,POR7,POR11,POR14,POR15,POR19
+UZB2,UZB8,UZB14,UZB17,UZB18,UZB19,UZB20
+COL2,COL3,COL4,COL6,COL7,COL8,COL9,COL10,COL12,COL15,COL17,COL18
+ENG1,ENG2,ENG3,ENG5,ENG6,ENG8,ENG9,ENG11,ENG12
+`.replace(/\n/g,',').split(',').map(s => s.trim()).filter(Boolean);
+
+// Build Sets
+const faltamA1 = new Set(FALTAM_A1_RAW);
+const album2Has = new Set(ALBUM2_HAS_RAW);
+
+// ============================================================
+// PERSISTENCE: localStorage
+// ============================================================
+const STORAGE_KEY = 'figurinhas-copa2026-v2';
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch(e) {}
+  return null;
+}
+
+function saveState(state) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch(e) {}
+}
+
+// Initialize or load state
+// State: { [code]: { a1: bool, a2: bool } } — true = HAS the sticker
+let state = loadState();
+
+if (!state) {
+  state = {};
+  ALL_CODES.forEach(code => {
+    state[code] = {
+      a1: !faltamA1.has(code),  // A1 has if NOT in faltam list
+      a2: album2Has.has(code)    // A2 has if IN repetidas list
+    };
+  });
+  saveState(state);
+}
+
+// ============================================================
+// DERIVED DATA
+// ============================================================
+function status(code) {
+  const s = state[code];
+  if (!s) return 'none';
+  if (s.a1 && s.a2) return 'both';
+  if (s.a1) return 'a1';
+  if (s.a2) return 'a2';
+  return 'none';
+}
+
+function needCount(code) {
+  const st = status(code);
+  if (st === 'none') return 2;
+  if (st === 'a1' || st === 'a2') return 1;
+  return 0;
+}
+
+function computeStats() {
+  let a1Has = 0, a2Has = 0, bothHave = 0, bothMissing = 0, oneMissing = 0;
+  ALL_CODES.forEach(code => {
+    const s = state[code];
+    if (s.a1) a1Has++;
+    if (s.a2) a2Has++;
+    if (s.a1 && s.a2) bothHave++;
+    else if (!s.a1 && !s.a2) bothMissing++;
+    else oneMissing++;
+  });
+  return { a1Has, a2Has, bothHave, bothMissing, oneMissing, total: TOTAL };
+}
+
+// ============================================================
+// RENDER
+// ============================================================
+let currentFilter = 'missing'; // 'missing' | 'all'
+let searchQuery = '';
+
+const $stats = document.getElementById('stats');
+const $main = document.getElementById('main');
+const $search = document.getElementById('search');
+const $btnMissing = document.getElementById('btn-missing');
+const $btnAll = document.getElementById('btn-all');
+const $btnCopy = document.getElementById('btn-copy');
+const $toast = document.getElementById('toast');
+
+let toastTimer;
+function showToast(msg) {
+  $toast.textContent = msg;
+  $toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => $toast.classList.remove('show'), 2000);
+}
+
+function renderStats() {
+  const s = computeStats();
+  $stats.innerHTML = `
+    <div class="stat-pill">📘 A1: <b>${s.a1Has}/${s.total}</b> (${Math.round(s.a1Has/s.total*100)}%)</div>
+    <div class="stat-pill">📗 A2: <b>${s.a2Has}/${s.total}</b> (${Math.round(s.a2Has/s.total*100)}%)</div>
+    <div class="stat-pill">🔴 2x: <b>${s.bothMissing}</b></div>
+    <div class="stat-pill">🟡 1x: <b>${s.oneMissing}</b></div>
+    <div class="stat-pill">✅ OK: <b>${s.bothHave}</b></div>
+  `;
+}
+
+function renderAll() {
+  renderStats();
+
+  const q = searchQuery.toLowerCase().trim();
+  let html = '';
+
+  SECTIONS.forEach(([flag, name, codes], si) => {
+    // Filter stickers
+    let filtered = codes;
+    if (currentFilter === 'missing') {
+      filtered = codes.filter(c => needCount(c) > 0);
+    }
+    if (q) {
+      filtered = filtered.filter(c => c.toLowerCase().includes(q));
+    }
+    if (filtered.length === 0) return;
+
+    // Count section stats
+    const totalSec = codes.length;
+    const missingSec = codes.filter(c => needCount(c) > 0).length;
+    const bothMissingSec = codes.filter(c => needCount(c) === 2).length;
+
+    let badgeClass = 'badge-ok';
+    if (bothMissingSec > 0) badgeClass = 'badge-danger';
+    else if (missingSec > 0) badgeClass = 'badge-warn';
+
+    // Only show relevant count based on filter
+    const countLabel = currentFilter === 'missing'
+      ? `${missingSec}/${totalSec}`
+      : `${totalSec - missingSec}/${totalSec}`;
+
+    html += `<div class="section">`;
+    html += `<div class="section-header" data-section="${si}">`;
+    html += `<span class="flag">${flag}</span>`;
+    html += `<span class="name">${name}</span>`;
+    html += `<span class="badge ${badgeClass}">${countLabel}</span>`;
+    // Auto-open sections that have missing stickers when in missing mode
+    const openClass = (currentFilter === 'missing' && missingSec > 0) ? ' open' : '';
+    html += `<span class="arrow${openClass}">▼</span>`;
+    html += `</div>`;
+    html += `<div class="section-body${openClass}">`;
+
+    filtered.forEach(code => {
+      const st = status(code);
+      const nc = needCount(code);
+      let needLabel = '', needClass = '';
+      if (nc === 2) { needLabel = '2x'; needClass = 'need-2'; }
+      else if (nc === 1) { needLabel = '1x'; needClass = 'need-1'; }
+
+      const a1on = state[code].a1 ? 'on' : 'off';
+      const a2on = state[code].a2 ? 'on' : 'off';
+      const a1label = state[code].a1 ? '✅' : '❌';
+      const a2label = state[code].a2 ? '✅' : '❌';
+
+      html += `<div class="sticker" data-code="${code}">`;
+      html += `<span class="code">${code}</span>`;
+      // Only show need badge when missing
+      if (nc > 0) {
+        html += `<span class="need ${needClass}">${needLabel}</span>`;
+      } else {
+        html += `<span class="need"></span>`;
+      }
+      html += `<span class="btns">`;
+      html += `<button class="btn-a1 ${a1on}" data-action="a1" data-code="${code}" aria-label="Álbum 1">${a1label}₁</button>`;
+      html += `<button class="btn-a2 ${a2on}" data-action="a2" data-code="${code}" aria-label="Álbum 2">${a2label}₂</button>`;
+      html += `</span>`;
+      html += `</div>`;
+    });
+
+    html += `</div></div>`;
+  });
+
+  if (!html) {
+    html = `<div class="empty-state">
+      <div class="icon">🎉</div>
+      <p><strong>Nenhuma figurinha encontrada!</strong><br>
+      ${currentFilter === 'missing' ? 'Todos os álbuns estão completos ou o filtro não encontrou resultados.' : 'Nenhuma figurinha corresponde à busca.'}</p>
+    </div>`;
+  }
+
+  $main.innerHTML = html;
+
+  // Wire section toggles
+  $main.querySelectorAll('.section-header').forEach(header => {
+    header.addEventListener('click', () => {
+      const body = header.nextElementSibling;
+      const arrow = header.querySelector('.arrow');
+      const isOpen = body.classList.contains('open');
+      body.classList.toggle('open');
+      if (isOpen) {
+        arrow.classList.remove('open');
+        header.classList.remove('open');
+      } else {
+        arrow.classList.add('open');
+        header.classList.add('open');
+      }
+    });
+  });
+
+  // Wire sticker buttons
+  $main.querySelectorAll('.sticker button').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const code = btn.dataset.code;
+      const album = btn.dataset.action; // 'a1' or 'a2'
+      toggleSticker(code, album);
+    });
+  });
+}
+
+function toggleSticker(code, album) {
+  state[code][album] = !state[code][album];
+  saveState(state);
+
+  // Update just that sticker's row in-place
+  const row = $main.querySelector(`.sticker[data-code="${code}"]`);
+  if (!row) { renderAll(); return; } // fallback
+
+  const st = status(code);
+  const nc = needCount(code);
+
+  // Update need badge
+  const needEl = row.querySelector('.need');
+  if (needEl) {
+    needEl.textContent = nc === 2 ? '2x' : nc === 1 ? '1x' : '';
+    needEl.className = 'need ' + (nc === 2 ? 'need-2' : nc === 1 ? 'need-1' : '');
+  }
+
+  // Update buttons
+  const btnA1 = row.querySelector('.btn-a1');
+  const btnA2 = row.querySelector('.btn-a2');
+  if (btnA1) {
+    btnA1.className = 'btn-a1 ' + (state[code].a1 ? 'on' : 'off');
+    btnA1.textContent = (state[code].a1 ? '✅' : '❌') + '₁';
+  }
+  if (btnA2) {
+    btnA2.className = 'btn-a2 ' + (state[code].a2 ? 'on' : 'off');
+    btnA2.textContent = (state[code].a2 ? '✅' : '❌') + '₂';
+  }
+
+  // If filtering to missing and this sticker is now complete, hide it
+  if (currentFilter === 'missing' && nc === 0) {
+    const section = row.closest('.section');
+    row.style.opacity = '0';
+    row.style.maxHeight = '0';
+    row.style.padding = '0';
+    row.style.overflow = 'hidden';
+    row.style.transition = 'all .3s';
+    setTimeout(() => {
+      row.remove();
+      if (section) {
+        const body = section.querySelector('.section-body');
+        if (body && body.querySelectorAll('.sticker').length === 0) {
+          section.style.display = 'none';
+        } else {
+          updateSectionBadge(section);
+        }
+      }
+    }, 300);
+  }
+
+  renderStats();
+}
+
+function updateSectionBadge(sectionEl) {
+  const body = sectionEl.querySelector('.section-body');
+  const badge = sectionEl.querySelector('.badge');
+  if (!body || !badge) return;
+  const stickers = body.querySelectorAll('.sticker');
+  const total = stickers.length;
+  // Count missing in this section: stickers with need-1 or need-2 class
+  const missing2 = body.querySelectorAll('.need-2').length;
+  const missing1 = body.querySelectorAll('.need-1').length;
+  const missing = missing2 + missing1;
+
+  // Determine the right label based on current filter
+  if (currentFilter === 'missing') {
+    badge.textContent = `${missing}/${total}`;
+  } else {
+    badge.textContent = `${total - missing}/${total}`;
+  }
+
+  // Update badge color
+  badge.className = 'badge ';
+  if (missing2 > 0) badge.className += 'badge-danger';
+  else if (missing1 > 0) badge.className += 'badge-warn';
+  else badge.className += 'badge-ok';
+}
+
+function checkEmptySections() {
+  $main.querySelectorAll('.section').forEach(section => {
+    const body = section.querySelector('.section-body');
+    if (body && body.querySelectorAll('.sticker').length === 0) {
+      section.style.display = 'none';
+    }
+  });
+}
+
+// ============================================================
+// SHARE / COPY
+// ============================================================
+function generateShareText() {
+  const s = computeStats();
+
+  let text = '🏆 *Faltam Copa 2026 — Dois Álbuns*\n';
+  const p1 = Math.round(s.a1Has / s.total * 100);
+  const p2 = Math.round(s.a2Has / s.total * 100);
+  text += `📊 A1: ${s.a1Has}/${s.total} (${p1}%) | A2: ${s.a2Has}/${s.total} (${p2}%)\n`;
+
+  // Group missing stickers by country
+  SECTIONS.forEach(([flag, name, codes]) => {
+    const parts = [];
+    codes.forEach(code => {
+      const nc = needCount(code);
+      if (nc === 0) return; // both have, skip
+      parts.push(nc === 2 ? `${code} x2` : code);
+    });
+    if (parts.length === 0) return; // nothing missing in this country
+
+    text += `\n${flag} *${name}:*\n${parts.join(', ')}\n`;
+  });
+
+  text += `\n🤝 Bora trocar? 📲`;
+  return text;
+}
+
+function copyShareText() {
+  const text = generateShareText();
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(() => {
+      showToast('✅ Copiado! Cole no WhatsApp ou onde quiser.');
+    }).catch(() => {
+      fallbackCopy(text);
+    });
+  } else {
+    fallbackCopy(text);
+  }
+}
+
+function fallbackCopy(text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.left = '-9999px';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); showToast('✅ Copiado!'); }
+  catch(e) { showToast('❌ Erro ao copiar. Tente de novo.'); }
+  document.body.removeChild(ta);
+}
+
+// ============================================================
+// EVENT HANDLERS
+// ============================================================
+$btnMissing.addEventListener('click', () => {
+  currentFilter = 'missing';
+  $btnMissing.classList.add('active');
+  $btnAll.classList.remove('active');
+  renderAll();
+});
+
+$btnAll.addEventListener('click', () => {
+  currentFilter = 'all';
+  $btnAll.classList.add('active');
+  $btnMissing.classList.remove('active');
+  renderAll();
+});
+
+$btnCopy.addEventListener('click', copyShareText);
+
+const $btnCollapse = document.getElementById('btn-collapse');
+$btnCollapse.addEventListener('click', () => {
+  const isCollapsing = $btnCollapse.textContent.includes('Recolher');
+  const bodies = $main.querySelectorAll('.section-body');
+  const arrows = $main.querySelectorAll('.section-header .arrow');
+  const headers = $main.querySelectorAll('.section-header');
+  bodies.forEach(b => b.classList.toggle('open', !isCollapsing));
+  arrows.forEach(a => a.classList.toggle('open', !isCollapsing));
+  headers.forEach(h => h.classList.toggle('open', !isCollapsing));
+  $btnCollapse.textContent = isCollapsing ? '📂 Expandir' : '📂 Recolher';
+});
+
+let searchDebounce;
+$search.addEventListener('input', () => {
+  clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(() => {
+    searchQuery = $search.value;
+    renderAll();
+  }, 200);
+});
+
+// ============================================================
+// KEYBOARD SHORTCUT
+// ============================================================
+document.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === 'c') {
+    // Only intercept if no text is selected (user wants to copy share text)
+    const sel = window.getSelection().toString();
+    if (!sel && document.activeElement === document.body) {
+      e.preventDefault();
+      copyShareText();
+    }
+  }
+});
+
+// ============================================================
+// INITIAL RENDER
+// ============================================================
+renderAll();
+
+// ============================================================
+// RESET (hidden at bottom)
+// ============================================================
+document.getElementById('btn-reset').addEventListener('click', () => {
+  if (confirm('Tem certeza? Isso vai apagar todas as suas marcações e voltar aos dados iniciais.')) {
+    localStorage.removeItem(STORAGE_KEY);
+    location.reload();
+  }
+});
+</script>
+</body>
+</html>
