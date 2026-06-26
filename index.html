@@ -122,6 +122,31 @@ main { padding: 8px 8px 100px; }
 }
 .toast.show { opacity: 1; }
 
+/* Overlays (setup + pin) */
+.overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 200;
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.overlay-card {
+  background: #fff; border-radius: 16px; padding: 24px 20px; max-width: 360px;
+  width: 100%; text-align: center; box-shadow: 0 8px 32px rgba(0,0,0,.2);
+}
+.overlay-card h2 { font-size: 1.1rem; margin-bottom: 6px; }
+.overlay-card p { font-size: .8rem; color: var(--muted); margin-bottom: 16px; line-height: 1.4; }
+.overlay-card label { display: block; text-align: left; font-size: .75rem; font-weight: 600; margin-bottom: 4px; color: var(--muted); }
+.overlay-card input {
+  width: 100%; border: 1px solid #ccc; border-radius: 10px; padding: 10px 12px;
+  font-size: .9rem; margin-bottom: 12px; outline: none; text-align: center; letter-spacing: 1px;
+}
+.overlay-card input:focus { border-color: var(--green); }
+.overlay-card .btn-primary {
+  background: var(--green); color: #fff; border: none; border-radius: 10px;
+  padding: 10px 20px; font-size: .9rem; font-weight: 600; cursor: pointer; width: 100%;
+}
+.overlay-card .btn-primary:active { opacity: .8; }
+.overlay-card .error { color: var(--red); font-size: .75rem; margin-top: -6px; margin-bottom: 8px; min-height: 18px; }
+.overlay-card .hint { font-size: .7rem; color: #aaa; margin-top: 4px; }
+
 @media (min-width: 600px) {
   main { max-width: 700px; margin: 0 auto; padding: 12px 16px 60px; }
   .toolbar { justify-content: center; }
@@ -131,6 +156,33 @@ main { padding: 8px 8px 100px; }
 </style>
 </head>
 <body>
+
+<!-- SETUP overlay (first time: Supabase URL + key) -->
+<div class="overlay" id="overlay-setup" style="display:none;">
+  <div class="overlay-card">
+    <h2>🔗 Configurar Supabase</h2>
+    <p>Conecte seu projeto do Supabase pra salvar na nuvem.</p>
+    <label>URL do projeto</label>
+    <input type="text" id="sb-url" placeholder="https://xxxx.supabase.co">
+    <label>Anon Key</label>
+    <input type="text" id="sb-key" placeholder="eyJhbGci...">
+    <div class="error" id="setup-error"></div>
+    <button class="btn-primary" id="btn-setup">Salvar & Continuar</button>
+    <p class="hint">Crie um projeto grátis em <a href="https://supabase.com" target="_blank">supabase.com</a> e rode o setup.sql</p>
+  </div>
+</div>
+
+<!-- PIN overlay (login / first-time create) -->
+<div class="overlay" id="overlay-pin" style="display:none;">
+  <div class="overlay-card">
+    <h2 id="pin-title">🔐 Criar PIN</h2>
+    <p id="pin-desc">Crie um PIN de 4 dígitos pra proteger seus dados.</p>
+    <input type="password" id="pin-input" placeholder="••••" maxlength="6" inputmode="numeric" pattern="[0-9]*" autocomplete="off">
+    <div class="error" id="pin-error"></div>
+    <button class="btn-primary" id="btn-pin">Entrar</button>
+    <p class="hint">Depois de entrar, o acesso fica salvo nesta sessão.</p>
+  </div>
+</div>
 
 <div class="top-bar">
 <header>
@@ -338,11 +390,66 @@ const faltamA1 = new Set(FALTAM_A1_RAW);
 const album2Has = new Set(ALBUM2_HAS_RAW);
 
 // ============================================================
-// PERSISTENCE: localStorage
+// SUPABASE CONFIG
+// ============================================================
+const SB_CONFIG_KEY = 'figurinhas-sb-config';
+const SB_SESSION_KEY = 'figurinhas-sb-session';
+
+// Hardcoded — conecta direto, sem setup
+const SB_DEFAULT_URL = 'https://kjqyryoewmzuohidhckj.supabase.co';
+const SB_DEFAULT_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtqcXlyeW9ld216dW9oaWRoY2tqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTM0MzksImV4cCI6MjA5Nzk2OTQzOX0.kVxcQTRVqOfyUSm11oQT_HOEPsBdZNt-_4d-Hghc9Jc';
+
+let sbConfig = { url: SB_DEFAULT_URL, key: SB_DEFAULT_KEY };
+
+function sbEnabled() { return sbConfig && sbConfig.url && sbConfig.key; }
+function sbAuthed() { return sbEnabled() && localStorage.getItem(SB_SESSION_KEY) && localStorage.getItem('sb-pin-cache'); }
+
+// Hash PIN with SHA-256 (PIN real nunca sai do navegador)
+async function hashPin(pin) {
+  const data = new TextEncoder().encode(pin);
+  const hash = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function sbFetch(method, body) {
+  if (!sbEnabled()) return null;
+  const headers = {
+    'apikey': sbConfig.key,
+    'Authorization': `Bearer ${sbConfig.key}`,
+    'Content-Type': 'application/json'
+  };
+  if (!body) {
+    // GET
+    const res = await fetch(`${sbConfig.url}/rest/v1/album_state?id=eq.1`, { headers });
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`;
+      try { const err = await res.json(); msg = err.message || msg; } catch(e) {}
+      throw new Error(msg);
+    }
+    const data = await res.json();
+    return data.length > 0 ? data[0] : null;
+  } else {
+    // UPSERT (POST with merge-duplicates)
+    headers['Prefer'] = 'resolution=merge-duplicates,return=representation';
+    const res = await fetch(`${sbConfig.url}/rest/v1/album_state`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ id: 1, ...body })
+    });
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`;
+      try { const err = await res.json(); msg = err.message || msg; } catch(e) {}
+      throw new Error(msg);
+    }
+    return null;
+  }
+}
+
+// ============================================================
+// PERSISTENCE: localStorage + Supabase
 // ============================================================
 const STORAGE_KEY = 'figurinhas-copa2026-v2';
 
-function loadState() {
+function loadLocalState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) return JSON.parse(raw);
@@ -350,15 +457,176 @@ function loadState() {
   return null;
 }
 
-function saveState(state) {
+function saveLocalState(state) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch(e) {}
 }
 
+async function loadState() {
+  // Try Supabase first
+  if (sbAuthed()) {
+        try {
+      const row = await sbFetch('GET');
+      if (row && row.state && Object.keys(row.state).length > 0) {
+        saveLocalState(row.state); // update local cache
+                return row.state;
+      }
+    } catch(e) {
+      console.log('Supabase offline, usando cache local');
+    }
+      }
+
+  // Fallback to localStorage
+  return loadLocalState();
+}
+
+async function saveState(state) {
+  saveLocalState(state); // always save locally
+
+  // Sync to Supabase
+  if (sbAuthed()) {
+    try {
+      const body = {
+        state: state,
+        updated_at: new Date().toISOString()
+      };
+      // Include PIN hash (required by NOT NULL constraint; hash, not plaintext)
+      const pin = localStorage.getItem('sb-pin-cache');
+      if (pin) body.pin_hash = await hashPin(pin);
+      await sbFetch('POST', body);
+          } catch(e) {
+      console.log('Sync falhou, salvo localmente');
+          }
+  }
+}
+
+// ============================================================
+// SETUP & PIN FLOW
+// ============================================================
+const $overlaySetup = document.getElementById('overlay-setup');
+const $overlayPin = document.getElementById('overlay-pin');
+const $sbUrl = document.getElementById('sb-url');
+const $sbKey = document.getElementById('sb-key');
+const $setupError = document.getElementById('setup-error');
+const $pinInput = document.getElementById('pin-input');
+const $pinError = document.getElementById('pin-error');
+const $pinTitle = document.getElementById('pin-title');
+const $pinDesc = document.getElementById('pin-desc');
+
+function showSetup() {
+  $overlaySetup.style.display = 'flex';
+  $overlayPin.style.display = 'none';
+}
+
+function showPin(isFirstTime) {
+  $overlaySetup.style.display = 'none';
+  $overlayPin.style.display = 'flex';
+  $pinInput.value = '';
+  $pinError.textContent = '';
+  if (isFirstTime) {
+    $pinTitle.textContent = '🔐 Criar PIN';
+    $pinDesc.textContent = 'Crie um PIN de 4-6 dígitos pra proteger seus dados.';
+  } else {
+    $pinTitle.textContent = '🔐 Digite seu PIN';
+    $pinDesc.textContent = 'Entre com seu PIN pra acessar os dados na nuvem.';
+  }
+}
+
+function hideOverlays() {
+  $overlaySetup.style.display = 'none';
+  $overlayPin.style.display = 'none';
+}
+
+document.getElementById('btn-setup').addEventListener('click', async () => {
+  const url = $sbUrl.value.trim();
+  const key = $sbKey.value.trim();
+  if (!url || !key) {
+    $setupError.textContent = 'Preencha URL e Anon Key.';
+    return;
+  }
+  if (!url.startsWith('https://')) {
+    $setupError.textContent = 'URL deve começar com https://';
+    return;
+  }
+
+  // Validate URL format
+  if (!url.match(/^https:\/\/[a-z0-9]+\.supabase\.co\/?$/)) {
+    $setupError.textContent = 'URL inválida. Deve ser: https://XXXX.supabase.co (sem /rest nem nada extra)';
+    return;
+  }
+
+  // Test connection
+  sbConfig = { url: url.replace(/\/$/, ''), key };
+  try {
+    const row = await sbFetch('GET');
+    localStorage.setItem(SB_CONFIG_KEY, JSON.stringify(sbConfig));
+    $setupError.textContent = '';
+
+    if (row && row.pin_hash) {
+      // Existing data with PIN → ask for PIN
+      showPin(false);
+    } else {
+      // First time → create PIN
+      showPin(true);
+    }
+  } catch(e) {
+    $setupError.textContent = 'Erro: ' + e.message + ' | Verifique se rodou o setup.sql';
+    sbConfig = null;
+  }
+});
+
+document.getElementById('btn-pin').addEventListener('click', async () => {
+  const pin = $pinInput.value.trim();
+  if (!pin || pin.length < 3) {
+    $pinError.textContent = 'PIN deve ter pelo menos 3 caracteres.';
+    return;
+  }
+
+  try {
+    // Check if row already exists
+    const row = await sbFetch('GET');
+
+    if (row && row.pin_hash_hash) {
+      // Existing data → validate PIN (compare hashes)
+      const hash = await hashPin(pin);
+      if (row.pin_hash !== hash) {
+        $pinError.textContent = 'PIN incorreto. Tente novamente.';
+        return;
+      }
+      // PIN correct → load state
+      if (row.state && Object.keys(row.state).length > 0) {
+        state = row.state;
+        saveLocalState(state);
+      }
+    } else {
+      // First time → create PIN hash + save current state
+      const hash = await hashPin(pin);
+      await sbFetch('POST', {
+        state: state,
+        pin_hash: hash,
+        updated_at: new Date().toISOString()
+      });
+    }
+
+    // Success → store session + cache PIN
+    localStorage.setItem(SB_SESSION_KEY, '1');
+    localStorage.setItem('sb-pin-cache', pin);
+    hideOverlays();
+        saveLocalState(state);
+    renderAll();
+  } catch(e) {
+    $pinError.textContent = 'Erro: ' + e.message;
+  }
+});
+
+// ============================================================
+// INITIALIZATION
+// ============================================================
+
 // Initialize or load state
 // State: { [code]: { a1: bool, a2: bool } } — true = HAS the sticker
-let state = loadState();
+let state = loadLocalState();
 
 if (!state) {
   state = {};
@@ -368,8 +636,38 @@ if (!state) {
       a2: album2Has.has(code)    // A2 has if IN repetidas list
     };
   });
-  saveState(state);
+  saveLocalState(state);
 }
+
+// Startup sequence
+(async function init() {
+  // If already authenticated → load from Supabase directly
+  if (sbAuthed()) {
+    try {
+      const row = await sbFetch('GET');
+      if (row && row.state && Object.keys(row.state).length > 0) {
+        state = row.state;
+        saveLocalState(state);
+      }
+    } catch(e) {}
+    renderAll();
+  } else {
+    // Need to authenticate → show PIN screen
+    try {
+      const row = await sbFetch('GET');
+      if (row && row.pin_hash) {
+        showPin(false); // existing PIN → login
+      } else {
+        showPin(true);  // no PIN → create
+      }
+      renderAll();
+    } catch(e) {
+      // Can't reach Supabase → use localStorage
+      renderAll();
+    }
+  }
+
+})();
 
 // ============================================================
 // DERIVED DATA
@@ -742,16 +1040,16 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ============================================================
-// INITIAL RENDER
-// ============================================================
-renderAll();
-
-// ============================================================
 // RESET (hidden at bottom)
 // ============================================================
-document.getElementById('btn-reset').addEventListener('click', () => {
+document.getElementById('btn-reset').addEventListener('click', async () => {
   if (confirm('Tem certeza? Isso vai apagar todas as suas marcações e voltar aos dados iniciais.')) {
     localStorage.removeItem(STORAGE_KEY);
+    if (sbEnabled()) {
+      try {
+        await sbFetch('POST', { state: {}, updated_at: new Date().toISOString() });
+      } catch(e) {}
+    }
     location.reload();
   }
 });
