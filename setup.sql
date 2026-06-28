@@ -6,6 +6,7 @@ DROP TABLE IF EXISTS album_state;
 CREATE TABLE album_state (
   id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),
   state JSONB NOT NULL DEFAULT '{}',
+  visitor_state JSONB NOT NULL DEFAULT '{}',
   pin_hash TEXT NOT NULL DEFAULT '',
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );

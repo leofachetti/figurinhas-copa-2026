@@ -107,6 +107,21 @@ main { padding: 8px 8px 100px; }
 .btn-a1.on { border-color: #4caf50; background: #e8f5e9; color: #2e7d32; }
 .btn-a2.off { border-color: #ddd; background: #fafafa; color: #aaa; }
 .btn-a2.on { border-color: #2196f3; background: #e3f2fd; color: #1565c0; }
+.sticker .btns button:disabled { opacity: .6; cursor: default; }
+.btn-visitor {
+  min-width: 36px; width: 36px; height: 34px; border-radius: 8px; border: 2px solid #ddd;
+  font-size: .65rem; cursor: pointer; background: #fff; transition: all .12s;
+  -webkit-tap-highlight-color: transparent; display: flex; align-items: center; justify-content: center;
+}
+.btn-visitor.visitor-off { border-color: #ddd; background: #fafafa; }
+.btn-visitor.visitor-on { border-color: #ff9800; background: #fff3e0; }
+.btn-visitor.visitor-other { border-color: #e65100; background: #fff3e0; }
+.btn-visitor:active { transform: scale(.92); }
+.visitor-hint {
+  text-align: center; padding: 8px 12px; font-size: .72rem; color: #e67e22;
+  background: #fff3e0; border-bottom: 1px solid #ffe0b2; display: none;
+}
+.visitor-hint.show { display: block; }
 
 /* Footer */
 .empty-state { text-align: center; padding: 40px 20px; color: var(--muted); }
@@ -172,6 +187,17 @@ main { padding: 8px 8px 100px; }
   </div>
 </div>
 
+<!-- NAME overlay (visitor identification) -->
+<div class="overlay" id="overlay-name" style="display:none;">
+  <div class="overlay-card">
+    <h2>👋 Qual seu nome?</h2>
+    <p>Assim o dono do álbum sabe quem tem cada figurinha.</p>
+    <input type="text" id="name-input" placeholder="Seu nome" maxlength="30" autocomplete="off">
+    <div class="error" id="name-error"></div>
+    <button class="btn-primary" id="btn-name">Salvar</button>
+  </div>
+</div>
+
 <!-- PIN overlay (login / first-time create) -->
 <div class="overlay" id="overlay-pin" style="display:none;">
   <div class="overlay-card">
@@ -186,7 +212,7 @@ main { padding: 8px 8px 100px; }
 
 <div class="top-bar">
 <header>
-  <h1>🏆 <span>Copa 2026</span> · Dois Álbuns</h1>
+  <h1>🏆 <span>Copa 2026</span> · Dois Álbuns <button id="btn-auth" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:14px;padding:3px 10px;font-size:.7rem;cursor:pointer;vertical-align:middle;margin-left:4px;">🔐 Entrar</button></h1>
   <div class="stats-row" id="stats"></div>
 </header>
 
@@ -199,10 +225,16 @@ main { padding: 8px 8px 100px; }
 </div>
 </div><!-- .top-bar -->
 
+<div id="visitor-hint" class="visitor-hint" style="cursor:pointer;" title="Clique para trocar seu nome">🎯 Use o botão <b>Tenho</b> pra marcar as que você tem. Assim eu sei o que podemos trocar!</div>
+
 <main id="main"></main>
 
-<div style="text-align:center;padding:20px;">
-  <button id="btn-reset" style="border:none;background:none;color:#999;font-size:.75rem;cursor:pointer;text-decoration:underline;">↩ Resetar dados</button>
+<div style="text-align:center;padding:10px;">
+  <button id="btn-clear-visitor" style="border:none;background:none;color:#999;font-size:.7rem;cursor:pointer;text-decoration:underline;display:none;">🗑 Limpar minhas figurinhas</button>
+</div>
+
+<div style="text-align:center;padding:10px;">
+  <button id="btn-reset" style="border:none;background:none;color:#999;font-size:.75rem;cursor:pointer;text-decoration:underline;display:none;">↩ Resetar dados do dono</button>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -392,8 +424,6 @@ const album2Has = new Set(ALBUM2_HAS_RAW);
 // ============================================================
 // SUPABASE CONFIG
 // ============================================================
-const SB_CONFIG_KEY = 'figurinhas-sb-config';
-const SB_SESSION_KEY = 'figurinhas-sb-session';
 
 // Hardcoded — conecta direto, sem setup
 const SB_DEFAULT_URL = 'https://kjqyryoewmzuohidhckj.supabase.co';
@@ -401,8 +431,16 @@ const SB_DEFAULT_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmF
 
 let sbConfig = { url: SB_DEFAULT_URL, key: SB_DEFAULT_KEY };
 
+// Auth session — PIN cached in localStorage for page reload convenience
+const PIN_CACHE_KEY = 'figurinhas-sb-pin';
+let authed = false;
+let pinCache = null;
+
+// Restore PIN from cache on load
+try { const p = localStorage.getItem(PIN_CACHE_KEY); if (p) { pinCache = p; authed = true; } } catch(e) {}
+
 function sbEnabled() { return sbConfig && sbConfig.url && sbConfig.key; }
-function sbAuthed() { return sbEnabled() && localStorage.getItem(SB_SESSION_KEY) && localStorage.getItem('sb-pin-cache'); }
+function sbAuthed() { return sbEnabled() && authed && pinCache; }
 
 // Hash PIN with SHA-256 (PIN real nunca sai do navegador)
 async function hashPin(pin) {
@@ -445,61 +483,103 @@ async function sbFetch(method, body) {
 }
 
 // ============================================================
-// PERSISTENCE: localStorage + Supabase
+// PERSISTENCE: Supabase only
 // ============================================================
-const STORAGE_KEY = 'figurinhas-copa2026-v2';
 
-function loadLocalState() {
+async function loadState() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch(e) {}
+    const row = await sbFetch('GET');
+    if (row && row.state && Object.keys(row.state).length > 0) {
+      return row.state;
+    }
+  } catch(e) {
+    console.log('Supabase offline, usando dados padrão');
+  }
   return null;
 }
 
-function saveLocalState(state) {
+async function loadVisitorState() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch(e) {}
-}
-
-async function loadState() {
-  // Try Supabase first
-  if (sbAuthed()) {
-        try {
-      const row = await sbFetch('GET');
-      if (row && row.state && Object.keys(row.state).length > 0) {
-        saveLocalState(row.state); // update local cache
-                return row.state;
-      }
-    } catch(e) {
-      console.log('Supabase offline, usando cache local');
+    const row = await sbFetch('GET');
+    if (row && row.visitor_state && Object.keys(row.visitor_state).length > 0) {
+      return row.visitor_state;
     }
-      }
-
-  // Fallback to localStorage
-  return loadLocalState();
+  } catch(e) {}
+  return {};
 }
 
-async function saveState(state) {
-  saveLocalState(state); // always save locally
-
-  // Sync to Supabase
-  if (sbAuthed()) {
-    try {
-      const body = {
-        state: state,
-        updated_at: new Date().toISOString()
-      };
-      // Include PIN hash (required by NOT NULL constraint; hash, not plaintext)
-      const pin = localStorage.getItem('sb-pin-cache');
-      if (pin) body.pin_hash = await hashPin(pin);
-      await sbFetch('POST', body);
-          } catch(e) {
-      console.log('Sync falhou, salvo localmente');
-          }
+async function saveState(s) {
+  if (!sbAuthed()) { showToast('🔐 Entre com o PIN para editar'); return; }
+  try {
+    const body = {
+      state: s,
+      visitor_state: visitorState,
+      updated_at: new Date().toISOString()
+    };
+    if (pinCache) body.pin_hash = await hashPin(pinCache);
+    await sbFetch('POST', body);
+  } catch(e) {
+    showToast('⚠️ Erro ao salvar na nuvem');
+    console.log('Save falhou:', e);
   }
 }
+
+async function saveVisitorState() {
+  try {
+    // Fetch current album state first so we don't overwrite it
+    const row = await sbFetch('GET');
+    const curState = (row && row.state) ? row.state : state;
+    const body = {
+      state: curState,
+      visitor_state: visitorState,
+      updated_at: new Date().toISOString()
+    };
+    // Preserve existing pin_hash so visitor saves don't break PIN protection
+    if (pinCache) {
+      body.pin_hash = await hashPin(pinCache);
+    } else if (row && row.pin_hash) {
+      body.pin_hash = row.pin_hash;
+    }
+    await sbFetch('POST', body);
+  } catch(e) {
+    showToast('⚠️ Erro ao salvar');
+    console.log('Visitor save falhou:', e);
+  }
+}
+
+// ============================================================
+// NAME POPUP (visitor identification)
+// ============================================================
+const $overlayName = document.getElementById('overlay-name');
+const $nameInput = document.getElementById('name-input');
+const $nameError = document.getElementById('name-error');
+
+function showNamePopup() {
+  $overlaySetup.style.display = 'none';
+  $overlayPin.style.display = 'none';
+  $overlayName.style.display = 'flex';
+  $nameInput.value = visitorName || '';
+  $nameError.textContent = '';
+  setTimeout(() => $nameInput.focus(), 100);
+}
+
+document.getElementById('btn-name').addEventListener('click', () => {
+  const name = $nameInput.value.trim();
+  if (!name || name.length < 2) {
+    $nameError.textContent = 'Nome deve ter pelo menos 2 caracteres.';
+    return;
+  }
+  visitorName = name;
+  try { localStorage.setItem(VISITOR_NAME_KEY, name); } catch(e) {}
+  $overlayName.style.display = 'none';
+  updateVisitorUI();
+  showToast(`👋 Olá, ${name.split(' ')[0]}!`);
+});
+
+// Allow Enter key to submit name
+$nameInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('btn-name').click();
+});
 
 // ============================================================
 // SETUP & PIN FLOW
@@ -536,6 +616,7 @@ function showPin(isFirstTime) {
 function hideOverlays() {
   $overlaySetup.style.display = 'none';
   $overlayPin.style.display = 'none';
+  $overlayName.style.display = 'none';
 }
 
 document.getElementById('btn-setup').addEventListener('click', async () => {
@@ -560,7 +641,6 @@ document.getElementById('btn-setup').addEventListener('click', async () => {
   sbConfig = { url: url.replace(/\/$/, ''), key };
   try {
     const row = await sbFetch('GET');
-    localStorage.setItem(SB_CONFIG_KEY, JSON.stringify(sbConfig));
     $setupError.textContent = '';
 
     if (row && row.pin_hash) {
@@ -587,7 +667,7 @@ document.getElementById('btn-pin').addEventListener('click', async () => {
     // Check if row already exists
     const row = await sbFetch('GET');
 
-    if (row && row.pin_hash_hash) {
+    if (row && row.pin_hash) {
       // Existing data → validate PIN (compare hashes)
       const hash = await hashPin(pin);
       if (row.pin_hash !== hash) {
@@ -597,24 +677,30 @@ document.getElementById('btn-pin').addEventListener('click', async () => {
       // PIN correct → load state
       if (row.state && Object.keys(row.state).length > 0) {
         state = row.state;
-        saveLocalState(state);
+      }
+      // Also load visitor state
+      if (row.visitor_state && Object.keys(row.visitor_state).length > 0) {
+        visitorState = row.visitor_state;
       }
     } else {
       // First time → create PIN hash + save current state
       const hash = await hashPin(pin);
       await sbFetch('POST', {
         state: state,
+        visitor_state: visitorState,
         pin_hash: hash,
         updated_at: new Date().toISOString()
       });
     }
 
-    // Success → store session + cache PIN
-    localStorage.setItem(SB_SESSION_KEY, '1');
-    localStorage.setItem('sb-pin-cache', pin);
+    // Success → store session in memory + localStorage for reload
+    authed = true;
+    pinCache = pin;
+    try { localStorage.setItem(PIN_CACHE_KEY, pin); } catch(e) {}
     hideOverlays();
-        saveLocalState(state);
+    updateAuthUI();
     renderAll();
+    updateVisitorUI();
   } catch(e) {
     $pinError.textContent = 'Erro: ' + e.message;
   }
@@ -624,50 +710,157 @@ document.getElementById('btn-pin').addEventListener('click', async () => {
 // INITIALIZATION
 // ============================================================
 
-// Initialize or load state
-// State: { [code]: { a1: bool, a2: bool } } — true = HAS the sticker
-let state = loadLocalState();
+// Visitor identity — saved in localStorage so it survives reload
+const VISITOR_NAME_KEY = 'figurinhas-visitor-name';
+let visitorName = null;
+try { visitorName = localStorage.getItem(VISITOR_NAME_KEY); } catch(e) {}
 
-if (!state) {
-  state = {};
+// Visitor state — loaded from Supabase on init
+// Format: { "BRA1": ["Maria", "João"], "MEX5": ["Maria"] }
+let visitorState = {};
+
+// State: { [code]: { a1: bool, a2: bool } } — true = HAS the sticker
+// Starts null; loaded from Supabase or computed from defaults in init()
+let state = null;
+
+function computeDefaultState() {
+  const s = {};
   ALL_CODES.forEach(code => {
-    state[code] = {
+    s[code] = {
       a1: !faltamA1.has(code),  // A1 has if NOT in faltam list
       a2: album2Has.has(code)    // A2 has if IN repetidas list
     };
   });
-  saveLocalState(state);
+  return s;
 }
+
+function migrateVisitorState(vs) {
+  // Convert any old format to { code: { a1: "name"|null, a2: "name"|null } }
+  const codes = Object.keys(vs);
+  if (codes.length === 0) return vs;
+  const firstVal = vs[codes[0]];
+  // Detect format
+  if (Array.isArray(firstVal)) {
+    // Old: { code: ["name1","name2"] } → take first name only
+    const migrated = {};
+    for (const code of codes) {
+      const arr = Array.isArray(vs[code]) ? vs[code] : [];
+      migrated[code] = { a1: arr.length > 0 ? arr[0] : null, a2: null };
+    }
+    return migrated;
+  }
+  // Current: { code: { a1: [...], a2: [...] } } → convert arrays to single strings
+  for (const code of codes) {
+    const entry = vs[code];
+    if (Array.isArray(entry.a1)) vs[code].a1 = entry.a1.length > 0 ? entry.a1[0] : null;
+    if (Array.isArray(entry.a2)) vs[code].a2 = entry.a2.length > 0 ? entry.a2[0] : null;
+    // Clean up null entries
+    if (!vs[code].a1 && !vs[code].a2) delete vs[code];
+  }
+  return vs;
+}
+
+function visitorHas(code, album) {
+  return !!(visitorState[code] && visitorState[code][album]);
+}
+function visitorIsMine(code, album) {
+  return visitorState[code] && visitorState[code][album] === visitorName;
+}
+function visitorNames(code, album) {
+  return (visitorState[code] && visitorState[code][album]) || '';
+}
+
+const $stats = document.getElementById('stats');
+const $main = document.getElementById('main');
+const $search = document.getElementById('search');
+const $btnMissing = document.getElementById('btn-missing');
+const $btnAll = document.getElementById('btn-all');
+const $btnCopy = document.getElementById('btn-copy');
+const $toast = document.getElementById('toast');
+
+let currentFilter = 'missing'; let searchQuery = '';
 
 // Startup sequence
 (async function init() {
-  // If already authenticated → load from Supabase directly
-  if (sbAuthed()) {
+  try {
+    // Fetch latest from Supabase (public SELECT, works for everyone)
     try {
       const row = await sbFetch('GET');
-      if (row && row.state && Object.keys(row.state).length > 0) {
-        state = row.state;
-        saveLocalState(state);
+      if (row) {
+        if (row.state && Object.keys(row.state).length > 0) {
+          state = row.state;
+        }
+        if (row.visitor_state && Object.keys(row.visitor_state).length > 0) {
+          visitorState = migrateVisitorState(row.visitor_state);
+        }
       }
-    } catch(e) {}
-    renderAll();
-  } else {
-    // Need to authenticate → show PIN screen
-    try {
-      const row = await sbFetch('GET');
-      if (row && row.pin_hash) {
-        showPin(false); // existing PIN → login
-      } else {
-        showPin(true);  // no PIN → create
-      }
-      renderAll();
     } catch(e) {
-      // Can't reach Supabase → use localStorage
-      renderAll();
+      console.log('Supabase offline, usando dados padrão');
     }
+
+    // Fallback to computed defaults if no data from Supabase
+    if (!state) {
+      state = computeDefaultState();
+    }
+
+    renderAll();
+    updateAuthUI();
+    updateVisitorUI();
+
+    // Show name popup for visitors who haven't identified yet
+    if (!sbAuthed() && !visitorName) {
+      showNamePopup();
+    }
+  } catch(e) {
+    console.error(e);
+    document.getElementById('main').innerHTML = '<div class="empty-state"><div class="icon">⚠️</div><p><strong>Erro:</strong><br>' + e.message + '</p></div>';
+    document.getElementById('stats').innerHTML = '<div class="stat-pill">❌ Erro</div>';
   }
 
 })();
+
+// ============================================================
+// AUTH UI
+// ============================================================
+function updateAuthUI() {
+  const btn = document.getElementById('btn-auth');
+  if (!btn) return;
+  const resetBtn = document.getElementById('btn-reset');
+  if (sbAuthed()) {
+    btn.textContent = '👤 Sair';
+    btn.title = 'Você é o dono — clique para sair';
+    if (resetBtn) resetBtn.style.display = '';
+  } else {
+    btn.textContent = '🔐 Entrar';
+    btn.title = 'Clique para entrar como dono e poder editar';
+    if (resetBtn) resetBtn.style.display = 'none';
+  }
+}
+
+document.getElementById('btn-auth').addEventListener('click', async () => {
+  if (sbAuthed()) {
+    // Logout
+    authed = false;
+    pinCache = null;
+    try { localStorage.removeItem(PIN_CACHE_KEY); } catch(e) {}
+    updateAuthUI();
+    showToast('Modo visitante');
+    renderAll();
+    updateVisitorUI();
+  } else {
+    // Login → check if PIN exists in DB
+    try {
+      const row = await sbFetch('GET');
+      if (row && row.pin_hash) {
+        showPin(false); // PIN exists → login
+      } else {
+        showPin(true);  // no PIN → create
+      }
+    } catch(e) {
+      showPin(false); // offline → try login anyway
+    }
+  }
+});
 
 // ============================================================
 // DERIVED DATA
@@ -692,6 +885,7 @@ function computeStats() {
   let a1Has = 0, a2Has = 0, bothHave = 0, bothMissing = 0, oneMissing = 0;
   ALL_CODES.forEach(code => {
     const s = state[code];
+    if (!s) return;
     if (s.a1) a1Has++;
     if (s.a2) a2Has++;
     if (s.a1 && s.a2) bothHave++;
@@ -704,18 +898,8 @@ function computeStats() {
 // ============================================================
 // RENDER
 // ============================================================
-let currentFilter = 'missing'; // 'missing' | 'all'
-let searchQuery = '';
-
-const $stats = document.getElementById('stats');
-const $main = document.getElementById('main');
-const $search = document.getElementById('search');
-const $btnMissing = document.getElementById('btn-missing');
-const $btnAll = document.getElementById('btn-all');
-const $btnCopy = document.getElementById('btn-copy');
-const $toast = document.getElementById('toast');
-
 let toastTimer;
+
 function showToast(msg) {
   $toast.textContent = msg;
   $toast.classList.add('show');
@@ -728,9 +912,6 @@ function renderStats() {
   $stats.innerHTML = `
     <div class="stat-pill">📘 A1: <b>${s.a1Has}/${s.total}</b> (${Math.round(s.a1Has/s.total*100)}%)</div>
     <div class="stat-pill">📗 A2: <b>${s.a2Has}/${s.total}</b> (${Math.round(s.a2Has/s.total*100)}%)</div>
-    <div class="stat-pill">🔴 2x: <b>${s.bothMissing}</b></div>
-    <div class="stat-pill">🟡 1x: <b>${s.oneMissing}</b></div>
-    <div class="stat-pill">✅ OK: <b>${s.bothHave}</b></div>
   `;
 }
 
@@ -788,7 +969,29 @@ function renderAll() {
       const a1label = state[code].a1 ? '✅' : '❌';
       const a2label = state[code].a2 ? '✅' : '❌';
 
-      html += `<div class="sticker" data-code="${code}">`;
+      const readonly = sbAuthed() ? '' : 'disabled';
+	      const ownerHas_a1 = state[code].a1;
+	      const ownerHas_a2 = state[code].a2;
+	      const vhas_a1 = visitorHas(code, 'a1');
+	      const vhas_a2 = visitorHas(code, 'a2');
+	      const vmine_a1 = visitorIsMine(code, 'a1');
+	      const vmine_a2 = visitorIsMine(code, 'a2');
+	      const vother_a1 = vhas_a1 && !vmine_a1;
+	      const vother_a2 = vhas_a2 && !vmine_a2;
+	      const vdisabled1 = vother_a1 || ownerHas_a1;
+	      const vdisabled2 = vother_a2 || ownerHas_a2;
+      const vnames_a1 = visitorNames(code, 'a1');
+	      const vnames_a2 = visitorNames(code, 'a2');
+      const vtitle1 = ownerHas_a1 ? ' title="Já tenho no Álbum 1"' : (vnames_a1 ? ` title="${vnames_a1.replace(/"/g, '&quot;')}${vother_a1 ? ' (já tem)' : ''}"` : '');
+	      const vtitle2 = ownerHas_a2 ? ' title="Já tenho no Álbum 2"' : (vnames_a2 ? ` title="${vnames_a2.replace(/"/g, '&quot;')}${vother_a2 ? ' (já tem)' : ''}"` : '');
+	      const vclass1 = ownerHas_a1 ? 'visitor-off' : (vmine_a1 ? 'visitor-on' : (vother_a1 ? 'visitor-other' : 'visitor-off'));
+	      const vclass2 = ownerHas_a2 ? 'visitor-off' : (vmine_a2 ? 'visitor-on' : (vother_a2 ? 'visitor-other' : 'visitor-off'));
+	      const vlabel1 = ownerHas_a1 ? '✅' : (vmine_a1 ? '✅' : (vother_a1 ? '👤' : '🔄'));
+	      const vlabel2 = ownerHas_a2 ? '✅' : (vmine_a2 ? '✅' : (vother_a2 ? '👤' : '🔄'));
+	      const vany = vhas_a1 || vhas_a2;
+	      const highlight = (vany && nc > 0) ? ' style="background:#fffde7;"' : '';
+
+	      html += `<div class="sticker" data-code="${code}"${highlight}>`;
       html += `<span class="code">${code}</span>`;
       // Only show need badge when missing
       if (nc > 0) {
@@ -797,8 +1000,10 @@ function renderAll() {
         html += `<span class="need"></span>`;
       }
       html += `<span class="btns">`;
-      html += `<button class="btn-a1 ${a1on}" data-action="a1" data-code="${code}" aria-label="Álbum 1">${a1label}₁</button>`;
-      html += `<button class="btn-a2 ${a2on}" data-action="a2" data-code="${code}" aria-label="Álbum 2">${a2label}₂</button>`;
+      html += `<button class="btn-a1 ${a1on}" data-action="a1" data-code="${code}" aria-label="Álbum 1" ${readonly}>${a1label}₁</button>`;
+      html += `<button class="btn-a2 ${a2on}" data-action="a2" data-code="${code}" aria-label="Álbum 2" ${readonly}>${a2label}₂</button>`;
+      html += `<button class="btn-visitor ${vclass1}" data-action="visitor" data-album="a1" data-code="${code}" aria-label="Troca A1"${vtitle1}${vdisabled1 ? ' disabled' : ''}>${vlabel1}₁</button>
+	      <button class="btn-visitor ${vclass2}" data-action="visitor" data-album="a2" data-code="${code}" aria-label="Troca A2"${vtitle2}${vdisabled2 ? ' disabled' : ''}>${vlabel2}₂</button>`;
       html += `</span>`;
       html += `</div>`;
     });
@@ -838,13 +1043,48 @@ function renderAll() {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const code = btn.dataset.code;
-      const album = btn.dataset.action; // 'a1' or 'a2'
+      const action = btn.dataset.action; // 'a1', 'a2', or 'visitor'
+      // For visitor buttons, combine action + album: 'visitor_a1' or 'visitor_a2'
+      const album = action === 'visitor' ? 'visitor_' + btn.dataset.album : action;
       toggleSticker(code, album);
     });
   });
 }
 
 function toggleSticker(code, album) {
+  // Visitor toggle — one person per sticker per album
+  // album is 'visitor_a1' or 'visitor_a2'
+  if (album.startsWith('visitor_')) {
+    const vAlbum = album.split('_')[1]; // 'a1' or 'a2'
+    if (!visitorName) { showToast('👋 Informe seu nome primeiro'); showNamePopup(); return; }
+    // Block if owner already has this sticker (only block adding, allow removing)
+    if (state[code] && state[code][vAlbum] && !visitorIsMine(code, vAlbum)) {
+      showToast('🔒 Já tenho essa figurinha no álbum');
+      return;
+    }
+    // Block if someone else already claimed this
+    if (visitorHas(code, vAlbum) && !visitorIsMine(code, vAlbum)) {
+      showToast(`⚠️ ${visitorNames(code, vAlbum)} já tem essa figurinha`);
+      return;
+    }
+    if (!visitorState[code]) visitorState[code] = { a1: null, a2: null };
+    if (visitorIsMine(code, vAlbum)) {
+      visitorState[code][vAlbum] = null; // unmark
+    } else {
+      visitorState[code][vAlbum] = visitorName; // mark
+    }
+    // Clean up if both albums are empty
+    if (!visitorState[code].a1 && !visitorState[code].a2) {
+      delete visitorState[code];
+    }
+    saveVisitorState();
+    updateVisitorButton(code, vAlbum);
+    updateVisitorUI();
+    return;
+  }
+
+  // Owner toggle (requires PIN)
+  if (!sbAuthed()) { showToast('🔐 Entre com o PIN para editar'); return; }
   state[code][album] = !state[code][album];
   saveState(state);
 
@@ -896,6 +1136,93 @@ function toggleSticker(code, album) {
   }
 
   renderStats();
+}
+
+function updateVisitorUI() {
+  const hint = document.getElementById('visitor-hint');
+  const btn = document.getElementById('btn-clear-visitor');
+  // Check if current visitor has any stickers marked in either album
+  const hasMyData = visitorName && Object.values(visitorState).some(entry =>
+    entry.a1 === visitorName || entry.a2 === visitorName
+  );
+  if (!sbAuthed() && hint) {
+    if (!visitorName) {
+      hint.textContent = '👋 Informe seu nome pra marcar as figurinhas que você tem!';
+      hint.classList.add('show');
+    } else if (!hasMyData) {
+      hint.textContent = `🔄 Use os botões de troca pra marcar as que você tem, ${visitorName}!`;
+      hint.classList.add('show');
+    } else {
+      hint.classList.remove('show');
+    }
+  } else if (hint) {
+    hint.classList.remove('show');
+  }
+  if (btn) btn.style.display = hasMyData ? 'inline-block' : 'none';
+}
+
+document.getElementById('btn-clear-visitor').addEventListener('click', () => {
+  // Only remove current visitor's stickers from both albums
+  for (const code of Object.keys(visitorState)) {
+    const entry = visitorState[code];
+    if (entry.a1 === visitorName) entry.a1 = null;
+    if (entry.a2 === visitorName) entry.a2 = null;
+    if (!entry.a1 && !entry.a2) delete visitorState[code];
+  }
+  saveVisitorState();
+  renderAll();
+  updateVisitorUI();
+});
+
+// Click hint to change name
+document.getElementById('visitor-hint').addEventListener('click', () => {
+  if (!sbAuthed()) showNamePopup();
+});
+
+function updateVisitorButton(code, album) {
+  // album is optional — if omitted, update both buttons
+  const albums = album ? [album] : ['a1', 'a2'];
+  albums.forEach(a => {
+    const btns = document.querySelectorAll(`.btn-visitor[data-code="${code}"][data-album="${a}"]`);
+    btns.forEach(btn => {
+      const ownerHas = state[code] && state[code][a];
+      const has = visitorHas(code, a);
+      const mine = visitorIsMine(code, a);
+      const names = visitorNames(code, a);
+      const sub = a === 'a1' ? '₁' : '₂';
+      if (ownerHas) {
+        btn.className = 'btn-visitor visitor-off';
+        btn.textContent = '✅' + sub;
+        btn.title = 'Já tenho no ' + (a === 'a1' ? 'Álbum 1' : 'Álbum 2');
+        btn.disabled = true;
+      } else if (mine) {
+        btn.className = 'btn-visitor visitor-on';
+        btn.textContent = '✅' + sub;
+        btn.title = names;
+        btn.disabled = false;
+      } else if (has) {
+        btn.className = 'btn-visitor visitor-other';
+        btn.textContent = '👤' + sub;
+        btn.title = names ? names + ' (já tem)' : '';
+        btn.disabled = true;
+      } else {
+        btn.className = 'btn-visitor visitor-off';
+        btn.textContent = '🔄' + sub;
+        btn.disabled = false;
+        if (names) btn.title = names;
+        else btn.removeAttribute('title');
+      }
+    });
+  });
+  // Update row highlight (any visitor data on either album)
+  if (!album) {
+    const row = document.querySelector(`.sticker[data-code="${code}"]`);
+    if (row) {
+      const nc = needCount(code);
+      const anyVisitor = visitorHas(code, 'a1') || visitorHas(code, 'a2');
+      row.style.background = (anyVisitor && nc > 0) ? '#fffde7' : '';
+    }
+  }
 }
 
 function updateSectionBadge(sectionEl) {
@@ -1044,12 +1371,14 @@ document.addEventListener('keydown', (e) => {
 // ============================================================
 document.getElementById('btn-reset').addEventListener('click', async () => {
   if (confirm('Tem certeza? Isso vai apagar todas as suas marcações e voltar aos dados iniciais.')) {
-    localStorage.removeItem(STORAGE_KEY);
     if (sbEnabled()) {
       try {
-        await sbFetch('POST', { state: {}, updated_at: new Date().toISOString() });
+        await sbFetch('POST', { state: {}, visitor_state: {}, updated_at: new Date().toISOString() });
       } catch(e) {}
     }
+    authed = false;
+    pinCache = null;
+    try { localStorage.removeItem(PIN_CACHE_KEY); } catch(e) {}
     location.reload();
   }
 });
