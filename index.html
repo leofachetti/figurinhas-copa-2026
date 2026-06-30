@@ -195,6 +195,7 @@ main { padding: 8px 8px 100px; }
     <input type="text" id="name-input" placeholder="Seu nome" maxlength="30" autocomplete="off">
     <div class="error" id="name-error"></div>
     <button class="btn-primary" id="btn-name">Salvar</button>
+    <p class="hint" style="margin-top:8px;"><a href="#" id="btn-skip-name" style="color:var(--muted);">🔐 ou entrar com PIN</a></p>
   </div>
 </div>
 
@@ -463,6 +464,22 @@ document.getElementById('btn-name').addEventListener('click', () => {
   $overlayName.style.display = 'none';
   updateVisitorUI();
   showToast(`👋 Olá, ${name.split(' ')[0]}!`);
+});
+
+// Skip name → go straight to PIN login
+document.getElementById('btn-skip-name').addEventListener('click', async (e) => {
+  e.preventDefault();
+  $overlayName.style.display = 'none';
+  try {
+    const row = await sbFetch('GET');
+    if (row && row.pin_hash) {
+      showPin(false); // PIN exists → login
+    } else {
+      showPin(true);  // no PIN → create
+    }
+  } catch(e) {
+    showPin(false); // offline → try login anyway
+  }
 });
 
 // Allow Enter key to submit name
